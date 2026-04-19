@@ -45,11 +45,25 @@ router.get("/session/:sessionId", async (req, res) => {
   const sessionId = req.params.sessionId;
   const orConditions = [{ session_id: sessionId }, { sessionId }];
   if (mongoose.Types.ObjectId.isValid(sessionId)) {
-    orConditions.push({ _id: sessionId });
+    orConditions.push({ _id: new mongoose.Types.ObjectId(sessionId) });
   }
-  const conversation = await Conversation.findOne({
+
+  let conversation = await Conversation.findOne({
     $or: orConditions,
   }).lean();
+
+  // Fallback: try matching _id as a string (GPT sometimes returns _id values)
+  if (!conversation) {
+    const allConversations = await Conversation.find({}).lean();
+    conversation = allConversations.find(
+      (c) =>
+        String(c._id) === sessionId ||
+        String(c.session_id) === sessionId ||
+        String(c._id).includes(sessionId) ||
+        sessionId.includes(String(c._id))
+    ) || null;
+  }
+
   if (!conversation) return res.status(404).json({ error: "Conversation not found" });
 
   const messages = await Message.find({
